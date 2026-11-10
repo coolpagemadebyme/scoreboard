@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f3ec">
+<title>早餐吃到飽｜計分系統</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#292821;background:#f6f3ec}
+*{box-sizing:border-box}body{margin:0;padding:18px 14px 40px;max-width:900px;margin-inline:auto}
+header{text-align:center;margin:8px 0 20px}h1{font-size:27px;margin:0 0 5px} .sub{color:#777;font-size:13px}
+.panel{background:#fff;border:1px solid #e8e3d8;border-radius:18px;padding:15px;margin:14px 0;box-shadow:0 3px 12px #33220a0a}
+h2{font-size:17px;margin:0 0 12px}
+.champs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.champ{background:#fbf8f0;border-radius:14px;padding:15px 10px;text-align:center;min-width:0}
+.crown{font-size:22px}.gender{font-size:13px;color:#777}.winner{font-size:20px;font-weight:750;margin:7px 0;overflow-wrap:anywhere}.points{font-size:27px;font-weight:800}.unit{font-size:12px;color:#777}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+input,select,button{font:inherit;border-radius:11px;border:1px solid #ddd6c9;padding:11px 12px;background:white;color:inherit}
+input{min-width:0;flex:1}button{cursor:pointer;font-weight:650}button.primary{background:#292821;color:white;border-color:#292821}
+button:disabled{opacity:.45;cursor:not-allowed}
+.small{font-size:12px;color:#777;line-height:1.5}
+.person{border-top:1px solid #eee9df;padding:13px 0}.person:first-child{border-top:0}
+.person-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.person-name{font-weight:750;font-size:16px}.tag{font-size:11px;color:#777;background:#f1eee7;border-radius:20px;padding:4px 8px;margin-left:5px}
+.total{font-weight:800;font-size:19px;white-space:nowrap}
+.items{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
+.item{background:#faf9f6;border-radius:11px;padding:8px 4px;text-align:center;min-width:0}
+.item-name{font-size:12px;color:#666}.count{font-size:18px;font-weight:750;margin:5px 0}
+.stepper{display:flex;justify-content:center;gap:5px}.stepper button{padding:5px 0;width:31px;border-radius:8px}
+.stepper .plus{background:#292821;color:white;border-color:#292821}
+.remove{font-size:12px;color:#9b4b3e;background:white;border:1px solid #ead8d4;padding:6px 9px}
+#status{font-size:12px;color:#777;margin-top:8px}.empty{color:#888;text-align:center;padding:20px}
+@media(max-width:540px){body{padding:13px 10px 30px}.panel{padding:12px}.items{gap:5px}.item{padding:7px 2px}.stepper{gap:3px}.stepper button{width:28px}.item-name{font-size:11px}}
+</style>
+</head>
+<body>
+<header>
+<h1>早餐吃到飽計分系統</h1>
+<div class="sub">即時同步・男女冠軍</div>
+</header>
+
+<section class="panel">
+<h2>目前冠軍</h2>
+<div class="champs">
+ <div class="champ"><div class="crown">♛</div><div class="gender">男生冠軍</div><div class="winner" id="maleWinner">尚無選手</div><div class="points" id="maleScore">—</div><div class="unit">分</div></div>
+ <div class="champ"><div class="crown">♛</div><div class="gender">女生冠軍</div><div class="winner" id="femaleWinner">尚無選手</div><div class="points" id="femaleScore">—</div><div class="unit">分</div></div>
+</div>
+<div id="status">正在連線…</div>
+</section>
+
+<section class="panel">
+<h2>新增選手</h2>
+<div class="controls">
+ <input id="newName" placeholder="輸入選手姓名" maxlength="30">
+ <select id="newGender" aria-label="性別"><option value="男">男</option><option value="女">女</option></select>
+ <button class="primary" id="addBtn">新增</button>
+</div>
+<p class="small">目前版本所有登入裝置都能新增、調整及刪除選手。請只分享給工作人員使用。</p>
+</section>
+
+<section class="panel">
+<h2>選手計分</h2>
+<div class="controls"><input id="search" placeholder="搜尋選手姓名…"></div>
+<div id="people"><div class="empty">等待資料載入…</div></div>
+</section>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, updateDoc, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAHECFLulPrlghpg89lFKNcrUA6FPmrfFA",
+  authDomain: "breakfast-draw-shared.firebaseapp.com",
+  projectId: "breakfast-draw-shared",
+  storageBucket: "breakfast-draw-shared.firebasestorage.app",
+  messagingSenderId: "1013622556420",
+  appId: "1:1013622556420:web:74a7b45cb987593eeff251",
+  measurementId: "G-GHZ1HSR95P"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const peopleRef = collection(db, "breakfast_scores", "event", "participants");
+const products = [
+  {key:"egg",label:"蛋餅",points:2},
+  {key:"toast",label:"吐司",points:3},
+  {key:"noodle",label:"鐵板麵",points:4},
+  {key:"thick",label:"厚片",points:2},
+  {key:"tea",label:"紅茶",points:1}
+];
+let people = [];
+let ready = false;
+const $ = id => document.getElementById(id);
+const score = p => products.reduce((sum,x)=>sum+(Number(p[x.key])||0)*x.points,0) - Math.max(0,(Number(p.tea)||0)-3);
+const esc = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function champion(gender){
+ const group=people.filter(p=>p.gender===gender);
+ if(!group.length)return null;
+ const max=Math.max(...group.map(score));
+ return {names:group.filter(p=>score(p)===max).map(p=>p.name),max};
+}
+function paintChampions(){
+ for(const [g,nameId,scoreId] of [["男","maleWinner","maleScore"],["女","femaleWinner","femaleScore"]]){
+  const c=champion(g);
+  $(nameId).textContent=c?c.names.join("、"):"尚無選手";
+  $(scoreId).textContent=c?c.max:"—";
+ }
+}
+function paintPeople(){
+ const q=$("search").value.trim().toLowerCase();
+ const filtered=people.filter(p=>p.name.toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a));
+ if(!filtered.length){$("people").innerHTML='<div class="empty">沒有符合的選手</div>';return;}
+ $("people").innerHTML=filtered.map(p=>`
+ <div class="person">
+  <div class="person-head">
+   <div><span class="person-name">${esc(p.name)}</span><span class="tag">${esc(p.gender)}</span></div>
+   <div style="display:flex;align-items:center;gap:9px"><span class="total">${score(p)} 分</span><button class="remove" data-delete="${p.id}">刪除</button></div>
+  </div>
+  <div class="items">${products.map(x=>`
+   <div class="item">
+    <div class="item-name">${x.label}${x.key==="tea"?"（上限3）":""}</div>
+    <div class="count">${Number(p[x.key])||0}</div>
+    <div class="stepper">
+     <button data-id="${p.id}" data-key="${x.key}" data-delta="-1" aria-label="${x.label}減一">−</button>
+     <button class="plus" data-id="${p.id}" data-key="${x.key}" data-delta="1" aria-label="${x.label}加一">＋</button>
+    </div>
+   </div>`).join("")}</div>
+ </div>`).join("");
+}
+function paint(){paintChampions();paintPeople();}
+$("search").addEventListener("input",paintPeople);
+$("addBtn").addEventListener("click",async()=>{
+ const name=$("newName").value.trim(), gender=$("newGender").value;
+ if(!name){alert("請先輸入姓名");return;}
+ $("addBtn").disabled=true;
+ try{await addDoc(peopleRef,{name,gender,egg:0,toast:0,noodle:0,thick:0,tea:0,createdAt:serverTimestamp()});$("newName").value="";}
+ catch(e){alert("新增失敗："+e.message);}
+ finally{$("addBtn").disabled=false;}
+});
+$("people").addEventListener("click",async e=>{
+ const b=e.target.closest("button");if(!b)return;
+ try{
+  if(b.dataset.delete){
+   const p=people.find(x=>x.id===b.dataset.delete);
+   if(p && confirm(`確定刪除「${p.name}」？`)) await deleteDoc(doc(peopleRef,p.id));
+  }else if(b.dataset.id){
+   const p=people.find(x=>x.id===b.dataset.id),key=b.dataset.key,delta=Number(b.dataset.delta);
+   if(!p)return;
+   const current=Number(p[key])||0;
+   if(current+delta<0)return;
+   if(key==="tea" && delta>0 && current>=3)return;
+   await updateDoc(doc(peopleRef,p.id),{[key]:increment(delta)});
+  }
+ }catch(err){alert("操作失敗："+err.message);}
+});
+try{
+ await signInAnonymously(auth);
+ onSnapshot(peopleRef,snap=>{
+  people=snap.docs.map(d=>({id:d.id,...d.data()}));
+  ready=true;paint();$("status").textContent="已連線・分數即時同步";
+ },err=>{$("status").textContent="資料讀取失敗："+err.message;});
+}catch(e){
+ $("status").textContent="登入失敗。請確認 Firebase Authentication 已啟用匿名登入，以及 Firestore 規則已設定。";
+ console.error(e);
+}
+</script>
+</body>
+</html>
